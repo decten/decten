@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PBKDF2 변환기</title>
+  <style>
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; margin: 18px; }
+    h1 { font-size: 18px; margin: 0 0 14px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; max-width: 980px; }
+    label { display:block; margin: 10px 0 6px; font-size: 12px; color:#444; }
+    textarea, input, button { width: 100%; box-sizing: border-box; }
+    textarea, input { padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; }
+    textarea { min-height: 110px; resize: vertical; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .row { display:grid; gap:10px; grid-template-columns: 1fr; }
+    @media (min-width: 720px) { .row { grid-template-columns: 1fr 1fr 1fr; } }
+    .btns { display:flex; gap:10px; margin-top:10px; }
+    button { padding: 10px; border-radius: 8px; border: 1px solid #333; background:#111; color:#fff; cursor:pointer; }
+    button.secondary { background:#fff; color:#111; border-color:#999; }
+    .mono { font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .msg { margin-top: 8px; font-size: 13px; }
+    .ok { color:#0a7; font-weight:700; }
+    .bad { color:#c22; font-weight:700; }
+    .hint { margin-top: 8px; font-size: 12px; color:#666; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>PBKDF2 변환기 (PBKDF2WithHmacSHA256) — 결과 포맷: <span class="mono">iterations:saltHex:hashHex</span></h1>
+
+    <label>입력 란 (비밀번호)</label>
+    <textarea id="pwd" placeholder="예: 1111"></textarea>
+
+    <div class="row">
+      <div>
+        <label>iterations</label>
+        <input id="iter" type="number" min="1" step="1" value="310000" />
+      </div>
+      <div>
+        <label>salt bytes</label>
+        <input id="saltBytes" type="number" min="1" step="1" value="16" />
+      </div>
+      <div>
+        <label>hash bytes</label>
+        <input id="hashBytes" type="number" min="1" step="1" value="32" />
+      </div>
+    </div>
+
+    <label>salt (hex) — 고정값. 바꾸면 결과도 바뀜</label>
+    <input id="saltHex" class="mono" placeholder="자동 생성됨" />
+
+    <div class="btns">
+      <button id="newSalt">새 salt</button>
+      <button id="copyOut" class="secondary">변환 값 복사</button>
+    </div>
+
+    <label>변환 값</label>
+    <textarea id="out" class="mono" readonly></textarea>
+    <div id="msg" class="msg"></div>
+
+    <div class="hint">
+      - PBKDF2는 “복호화”가 아니라, 같은 salt/iterations로 다시 계산해서 일치 여부를 보는 방식임.<br/>
+      - 노션에 올릴 때는 이 HTML을 https로 호스팅한 URL을 <span class="mono">/embed</span>로 넣으면 됨.
+    </div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function bytesToHex(u8) {
+    let s = "";
+    for (const b of u8) s += b.toString(16).padStart(2, "0");
+    return s;
+  }
+  function hexToBytes(hex) {
+    const h = hex.trim();
+    if (h.length % 2) throw new Error("salt hex 길이가 짝수가 아님");
+    const out = new Uint8Array(h.length / 2);
+    for (let i = 0; i < out.length; i++) {
+      const v = parseInt(h.slice(i*2, i*2+2), 16);
+      if (Number.isNaN(v)) throw new Error("salt hex 파싱 실패");
+      out[i] = v;
+    }
+    return out;
+  }
+  function randomSalt(n) {
+    const s = new Uint8Array(n);
+    crypto.getRandomValues(s);
+    return s;
+  }
+
+  async function pbkdf2Sha256(password, saltBytes, iterations, hashBytes) {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits(
+      { name: "PBKDF2", salt: saltBytes, iterations, hash: "SHA-256" },
+      key,
+      hashBytes * 8
+    );
+    return new Uint8Array(bits);
+  }
+
+  async function recalc() {
+    $("msg").textContent = "";
+    $("out").value = "";
+
+    const pwd = $("pwd").value;
+    if (!pwd) return;
+
+    const iterations = parseInt($("iter").value, 10);
+    const saltBytesN = parseInt($("saltBytes").value, 10);
+    const hashBytesN = parseInt($("hashBytes").value, 10);
+
+    try {
+      if (!Number.isFinite(iterations) || iterations <= 0) throw new Error("iterations 값 오류");
+      if (!Number.isFinite(saltBytesN) || saltBytesN <= 0) throw new Error("salt bytes 값 오류");
+      if (!Number.isFinite(hashBytesN) || hashBytesN <= 0) throw new Error("hash bytes 값 오류");
+
+      const salt = hexToBytes($("saltHex").value);
+      if (salt.length !== saltBytesN) throw new Error(`salt 길이 불일치 (입력 ${salt.length}B / 설정 ${saltBytesN}B)`);
+
+      const t0 = performance.now();
+      const hash = await pbkdf2Sha256(pwd, salt, iterations, hashBytesN);
+      const t1 = performance.now();
+
+      $("out").value = `${iterations}:${bytesToHex(salt)}:${bytesToHex(hash)}`;
+      $("msg").innerHTML = `<span class="ok">완료</span> (${Math.round(t1 - t0)}ms)`;
+    } catch (e) {
+      $("msg").innerHTML = `<span class="bad">에러</span>: ${e.message || e}`;
+    }
+  }
+
+  function ensureSalt() {
+    const saltBytesN = parseInt($("saltBytes").value, 10);
+    const cur = $("saltHex").value.trim();
+    if (!cur) {
+      $("saltHex").value = bytesToHex(randomSalt(saltBytesN));
+      return;
+    }
+    try {
+      const s = hexToBytes(cur);
+      if (s.length !== saltBytesN) $("saltHex").value = bytesToHex(randomSalt(saltBytesN));
+    } catch {
+      $("saltHex").value = bytesToHex(randomSalt(saltBytesN));
+    }
+  }
+
+  function copyOut() {
+    const v = $("out").value;
+    if (!v) return;
+    navigator.clipboard?.writeText(v).catch(() => {});
+  }
+
+  $("pwd").addEventListener("input", recalc);
+  $("iter").addEventListener("input", recalc);
+  $("hashBytes").addEventListener("input", recalc);
+
+  $("saltBytes").addEventListener("input", () => { ensureSalt(); recalc(); });
+  $("saltHex").addEventListener("input", recalc);
+
+  $("newSalt").addEventListener("click", () => { ensureSalt(); recalc(); });
+  $("copyOut").addEventListener("click", copyOut);
+
+  ensureSalt();
+</script>
+</body>
+</html>
