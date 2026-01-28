@@ -100,32 +100,26 @@
   }
 
   async function recalc() {
-    $("msg").textContent = "";
+    const msgEl = $("msg");
+    msgEl.style.display = "none";
+    msgEl.textContent = "";
     $("out").value = "";
-
+  
     const pwd = $("pwd").value;
     if (!pwd) return;
-
+  
     const iterations = parseInt($("iter").value, 10);
     const saltBytesN = parseInt($("saltBytes").value, 10);
     const hashBytesN = parseInt($("hashBytes").value, 10);
-
+  
     try {
-      if (!Number.isFinite(iterations) || iterations <= 0) throw new Error("iterations 값 오류");
-      if (!Number.isFinite(saltBytesN) || saltBytesN <= 0) throw new Error("salt bytes 값 오류");
-      if (!Number.isFinite(hashBytesN) || hashBytesN <= 0) throw new Error("hash bytes 값 오류");
-
       const salt = hexToBytes($("saltHex").value);
-      if (salt.length !== saltBytesN) throw new Error(`salt 길이 불일치 (입력 ${salt.length}B / 설정 ${saltBytesN}B)`);
-
-      const t0 = performance.now();
       const hash = await pbkdf2Sha256(pwd, salt, iterations, hashBytesN);
-      const t1 = performance.now();
-
       $("out").value = `${iterations}:${bytesToHex(salt)}:${bytesToHex(hash)}`;
-      $("msg").innerHTML = `<span class="ok">완료</span> (${Math.round(t1 - t0)}ms)`;
+      // 성공 메시지 없음
     } catch (e) {
-      $("msg").innerHTML = `<span class="bad">에러</span>: ${e.message || e}`;
+      msgEl.style.display = "block";
+      msgEl.innerHTML = `<span class="bad">에러</span>: ${e.message || e}`;
     }
   }
 
@@ -145,9 +139,21 @@
   }
 
   function copyOut() {
-    const v = $("out").value;
+    const out = $("out");
+    const v = out.value;
     if (!v) return;
-    navigator.clipboard?.writeText(v).catch(() => {});
+  
+    out.focus();
+    out.select();
+    out.setSelectionRange(0, v.length);
+  
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(v).catch(() => {
+        try { document.execCommand("copy"); } catch {}
+      });
+    } else {
+      try { document.execCommand("copy"); } catch {}
+    }
   }
 
   $("pwd").addEventListener("input", recalc);
@@ -164,6 +170,7 @@
 </script>
 </body>
 </html>
+
 
 
 
