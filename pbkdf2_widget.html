@@ -123,13 +123,15 @@
     }
   }
 
-  function ensureSalt() {
+  function ensureSalt(force = false) {
     const saltBytesN = parseInt($("saltBytes").value, 10);
     const cur = $("saltHex").value.trim();
-    if (!cur) {
+  
+    if (force || !cur) {
       $("saltHex").value = bytesToHex(randomSalt(saltBytesN));
       return;
     }
+  
     try {
       const s = hexToBytes(cur);
       if (s.length !== saltBytesN) $("saltHex").value = bytesToHex(randomSalt(saltBytesN));
@@ -163,13 +165,14 @@
   $("saltBytes").addEventListener("input", () => { ensureSalt(); recalc(); });
   $("saltHex").addEventListener("input", recalc);
 
-  $("newSalt").addEventListener("click", () => { ensureSalt(); recalc(); });
+  $("newSalt").addEventListener("click", () => { ensureSalt(true); recalc(); });
   $("copyOut").addEventListener("click", copyOut);
 
   ensureSalt();
 </script>
 </body>
 </html>
+
 
 
 
